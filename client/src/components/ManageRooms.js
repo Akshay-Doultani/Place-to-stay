@@ -12,7 +12,6 @@ import {
   Toolbar,
   Tooltip,
   Typography,
-  Button,
 } from '@mui/material';
 import { Close, StarBorder, Delete } from '@mui/icons-material';
 import { forwardRef } from 'react';
@@ -25,6 +24,10 @@ import 'swiper/css/zoom';
 import { useValue } from '../context/ContextProvider';
 import ConfirmationDialog from './ConfirmationDialog';
 import { getRooms, deleteRoom } from '../actions/room';
+import mapboxgl from 'mapbox-gl';
+import mbxGeocoding from '@mapbox/mapbox-sdk/services/geocoding';
+
+const geocodingClient = mbxGeocoding({ accessToken: process.env.REACT_APP_MAP_TOKEN });
 
 const Transition = forwardRef((props, ref) => {
   return <Slide direction="up" {...props} ref={ref} />;
@@ -33,7 +36,7 @@ const Transition = forwardRef((props, ref) => {
 const ManageRooms = ({ open, onClose }) => {
   const {
     state: { rooms, currentUser },
-    dispatch
+    dispatch,
   } = useValue();
 
   const [userRooms, setUserRooms] = useState([]);
@@ -69,6 +72,38 @@ const ManageRooms = ({ open, onClose }) => {
   const handleCancelDelete = () => {
     setConfirmDelete(null);
   };
+
+  const fetchAddresses = async (rooms) => {
+    return Promise.all(
+      rooms.map(async (room) => {
+        const response = await geocodingClient.reverseGeocode({
+          query: [room.lng, room.lat],  // Note: lng comes before lat in Mapbox
+          limit: 1,
+        }).send();
+
+        const feature = response.body.features[0];
+        const address = feature?.place_name || 'Address not found';
+        const placeName = feature?.text || 'Place name not found';  // Extract place name from feature
+
+        return { ...room, address, placeName };
+      })
+    );
+  };
+
+  useEffect(() => {
+    const fetchAndSetAddresses = async () => {
+      try {
+        const roomsWithAddresses = await fetchAddresses(userRooms);
+        setUserRooms(roomsWithAddresses);
+      } catch (error) {
+        console.error('Error fetching addresses:', error);
+      }
+    };
+
+    if (userRooms.length > 0) {
+      fetchAndSetAddresses();
+    }
+  }, [userRooms]);
 
   return (
     <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={Transition}>
@@ -151,7 +186,7 @@ const ManageRooms = ({ open, onClose }) => {
                     <Typography variant="h6" component="span">
                       Place Name:
                     </Typography>
-                    <Typography component="span">{room.placeName}</Typography>
+                    <Typography component="span">{room.placeName || 'Place name not available'}</Typography>
                   </Box>
                   <Box>
                     <Typography variant="h6" component="span">
